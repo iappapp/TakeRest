@@ -4,7 +4,7 @@ import AppKit
 import AudioToolbox
 import ServiceManagement
 
-enum Phase {
+enum Phase: String, Codable {
     case working
     case paused
     case onBreak
@@ -85,6 +85,7 @@ final class RestEngine: ObservableObject {
     }
 
     func start() {
+        restore()
         store.setKind(phaseKind())
         timer?.invalidate()
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -97,7 +98,58 @@ final class RestEngine: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        saveState()
         store.closeOpen()
+    }
+
+    // MARK: - Persistence (resume across quits / reboots)
+
+    private struct SavedState: Codable {
+        var phase: Phase
+        var remaining: Int
+        var cycleTotal: Int
+        var uptime: TimeInterval
+    }
+
+    private static let savedStateKey = "engineState"
+
+    func saveState() {
+        let s = SavedState(
+            phase: phase,
+            remaining: remaining,
+            cycleTotal: cycleTotal,
+            uptime: ProcessInfo.processInfo.systemUptime
+        )
+        if let data = try? JSONEncoder().encode(s) {
+            UserDefaults.standard.set(data, forKey: Self.savedStateKey)
+        }
+    }
+
+    private func restore() {
+        guard let data = UserDefaults.standard.data(forKey: Self.savedStateKey),
+              let s = try? JSONDecoder().decode(SavedState.self, from: data) else { return }
+        UserDefaults.standard.removeObject(forKey: Self.savedStateKey)
+
+        switch s.phase {
+        case .paused:
+            phase = .paused
+            cycleTotal = s.cycleTotal
+            remaining = s.remaining
+        case .working:
+            // Count only time the machine was awake since quit (uptime pauses during sleep).
+            let awake = max(0, ProcessInfo.processInfo.systemUptime - s.uptime)
+            cycleTotal = s.cycleTotal
+            let left = Int(Double(s.remaining) - awake)
+            if left <= 0 {
+                remaining = 0
+                startBreak()
+            } else {
+                remaining = left
+            }
+        case .onBreak:
+            // Quit during a break: start a fresh work cycle.
+            break
+        }
     }
 
     // MARK: - Tick
@@ -136,6 +188,9 @@ final class RestEngine: ObservableObject {
         }
 
         saveCounter += 1
+        if saveCounter % 5 == 0 {
+            saveState()
+        }
         if saveCounter >= 30 {
             saveCounter = 0
             store.save()
@@ -166,6 +221,7 @@ final class RestEngine: ObservableObject {
             phase = .paused
             store.setKind(.off)
         }
+        saveState()
     }
 
     func restNow() {
@@ -183,6 +239,7 @@ final class RestEngine: ObservableObject {
         store.setKind(.rest)
         BreakWindowController.shared.show()
         Notify.breakStarted(minutes: settings.restMinutes)
+        saveState()
     }
 
     func finishBreak(natural: Bool) {
@@ -198,6 +255,7 @@ final class RestEngine: ObservableObject {
         cycleTotal = settings.workMinutes * 60
         remaining = cycleTotal
         store.setKind(.use)
+        saveState()
     }
 
     func skipBreak() {
@@ -211,6 +269,7 @@ final class RestEngine: ObservableObject {
         cycleTotal = 5 * 60
         remaining = cycleTotal
         store.setKind(.use)
+        saveState()
     }
 }
 
