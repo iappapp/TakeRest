@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+._*
+
+# Xcode
+build/
+DerivedData/
+.derivedData/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+
+# Swift Package Manager (legacy)
+.build/
+Package.resolved
+
+# App data (local runtime artifacts)
+*.log
