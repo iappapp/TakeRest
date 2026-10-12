@@ -120,7 +120,7 @@ final class L10n: ObservableObject {
             "nav.stats": "Stats",
             "nav.settings": "Settings",
             "home.rule": "Rest %2$d min after every %1$d min at the computer",
-            "home.today": "%d rests today",
+            "home.today": "%1$d rests today, %2$d min total",
             "home.next": "Until next break reminder",
             "home.pause": "Pause",
             "home.resume": "Resume",
