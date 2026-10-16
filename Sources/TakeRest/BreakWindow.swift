@@ -6,6 +6,20 @@ final class BreakWindowController {
     static let shared = BreakWindowController()
 
     private var window: NSWindow?
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        // A break locks the session, so once the user unlocks the break screen has to
+        // be brought back in front of everything the lock screen restored.
+        let workspace = NSWorkspace.shared.notificationCenter
+        observers.append(workspace.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refront() }
+        })
+        let distributed = DistributedNotificationCenter.default()
+        observers.append(distributed.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refront() }
+        })
+    }
 
     func show() {
         guard window == nil else { return }
@@ -28,6 +42,14 @@ final class BreakWindowController {
     func hide() {
         window?.orderOut(nil)
         window = nil
+    }
+
+    private func refront() {
+        guard let w = window else { return }
+        w.level = .screenSaver
+        w.orderFrontRegardless()
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

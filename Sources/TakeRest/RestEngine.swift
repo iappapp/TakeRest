@@ -238,6 +238,7 @@ final class RestEngine: ObservableObject {
         breakTipKey = tips.randomElement() ?? "tip.1"
         store.setKind(.rest)
         BreakWindowController.shared.show()
+        ScreenLock.lock()
         Notify.breakStarted(minutes: settings.restMinutes)
         saveState()
     }
@@ -276,5 +277,39 @@ final class RestEngine: ObservableObject {
 enum Sound {
     static func playAlert() {
         AudioServicesPlaySystemSound(1005) // Glass
+    }
+}
+
+enum ScreenLock {
+    private typealias ImmediateLock = @convention(c) () -> Int32
+
+    /// Locks the session right away. macOS has no public locking API, so this calls
+    /// the private login.framework entry point used by the lock menu bar extra.
+    @discardableResult
+    static func lock() -> Bool {
+        let path = "/System/Library/PrivateFrameworks/login.framework/login"
+        if let lib = dlopen(path, RTLD_NOW) {
+            defer { dlclose(lib) }
+            if let sym = dlsym(lib, "SACLockScreenImmediate") {
+                let immediateLock = unsafeBitCast(sym, to: ImmediateLock.self)
+                if immediateLock() == 0 { return true }
+            }
+        }
+        NSLog("TakeRest: SACLockScreenImmediate unavailable, falling back to display sleep")
+        return run("/usr/bin/pmset", ["displaysleepnow"])
+    }
+
+    private static func run(_ path: String, _ args: [String]) -> Bool {
+        guard FileManager.default.isExecutableFile(atPath: path) else { return false }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = args
+        do {
+            try task.run()
+            return true
+        } catch {
+            NSLog("TakeRest: screen lock failed: \(error)")
+            return false
+        }
     }
 }
